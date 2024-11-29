@@ -1,0 +1,306 @@
+<html><head><base href="https://raw.githubusercontent.com"><title>スペースインベーダー</title><style>
+body {
+    margin: 0;
+    background: black;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    font-family: Arial, sans-serif;
+}
+canvas {
+    border: 2px solid #fff;
+}
+#score {
+    position: fixed;
+    top: 20px;
+    color: white;
+    font-size: 24px;
+}
+</style></head><body>
+<div id="score">スコア: 0</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+
+canvas.width = 800;
+canvas.height = 600;
+
+class Barrier {
+    constructor(x) {
+        this.x = x;
+        this.y = 450;
+        this.width = 60;
+        this.height = 40;
+        this.blocks = [];
+        // 防壁を6x4のブロックで構成
+        for (let i = 0; i < 6; i++) {
+            for (let j = 0; j < 4; j++) {
+                this.blocks.push({
+                    x: this.x + (i * 10),
+                    y: this.y + (j * 10),
+                    width: 10,
+                    height: 10,
+                    health: 3  // ブロックの耐久値
+                });
+            }
+        }
+    }
+
+    draw() {
+        this.blocks.forEach(block => {
+            ctx.fillStyle = `rgb(0, ${85 * block.health}, 0)`;
+            ctx.fillRect(block.x, block.y, block.width, block.height);
+        });
+    }
+
+    // 弾との衝突判定
+    checkCollision(bullet) {
+        for (let i = this.blocks.length - 1; i >= 0; i--) {
+            const block = this.blocks[i];
+            if (bullet.x < block.x + block.width &&
+                bullet.x + bullet.width > block.x &&
+                bullet.y < block.y + block.height &&
+                bullet.y + bullet.height > block.y) {
+                block.health--;
+                if (block.health <= 0) {
+                    this.blocks.splice(i, 1);
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+class Player {
+    constructor() {
+        this.width = 50;
+        this.height = 30;
+        this.x = canvas.width / 2 - this.width / 2;
+        this.y = canvas.height - this.height - 10;
+        this.speed = 5;
+        this.moveLeft = false;
+        this.moveRight = false;
+    }
+
+    draw() {
+        ctx.fillStyle = '#0f0';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    update() {
+        if (this.moveLeft && this.x > 0) {
+            this.x -= this.speed;
+        }
+        if (this.moveRight && this.x < canvas.width - this.width) {
+            this.x += this.speed;
+        }
+    }
+}
+
+class Bullet {
+    constructor(x, y, isEnemy = false) {
+        this.x = x;
+        this.y = y;
+        this.width = 3;
+        this.height = 15;
+        this.speed = 7;
+        this.isEnemy = isEnemy;
+    }
+
+    draw() {
+        ctx.fillStyle = this.isEnemy ? '#ff0' : '#fff';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    update() {
+        this.y += this.isEnemy ? this.speed : -this.speed;
+    }
+}
+
+class Enemy {
+    constructor(x, y) {
+        this.width = 40;
+        this.height = 30;
+        this.x = x;
+        this.y = y;
+        this.speed = 1;
+        this.direction = 1;
+        this.shootingInterval = Math.random() * 3000 + 2000;
+        this.lastShot = Date.now();
+    }
+
+    draw() {
+        ctx.fillStyle = '#f00';
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+    }
+
+    update() {
+        this.x += this.speed * this.direction;
+        
+        if (Date.now() - this.lastShot > this.shootingInterval) {
+            bullets.push(new Bullet(this.x + this.width / 2, this.y + this.height, true));
+            this.lastShot = Date.now();
+            this.shootingInterval = Math.random() * 3000 + 2000;
+        }
+    }
+}
+
+let player = new Player();
+let bullets = [];
+let enemies = [];
+let barriers = [];
+let score = 0;
+let gameOver = false;
+
+function initializeGame() {
+    player = new Player();
+    bullets = [];
+    enemies = [];
+    barriers = [];
+    score = 0;
+    gameOver = false;
+    scoreElement.textContent = `スコア: ${score}`;
+    
+    // 防壁の初期化
+    for (let i = 0; i < 5; i++) {
+        barriers.push(new Barrier(120 + i * 140));
+    }
+    
+    for (let i = 0; i < 5; i++) {
+        for (let j = 0; j < 3; j++) {
+            enemies.push(new Enemy(i * 100 + 150, j * 60 + 50));
+        }
+    }
+}
+
+initializeGame();
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'r' || e.key === 'R') {
+        initializeGame();
+        gameLoop();
+        return;
+    }
+    
+    if (gameOver) return;
+    
+    if (e.key === 'ArrowLeft') {
+        player.moveLeft = true;
+    }
+    if (e.key === 'ArrowRight') {
+        player.moveRight = true;
+    }
+    if (e.key === 'ArrowUp') {
+        bullets.push(new Bullet(player.x + player.width / 2, player.y));
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.key === 'ArrowLeft') {
+        player.moveLeft = false;
+    }
+    if (e.key === 'ArrowRight') {
+        player.moveRight = false;
+    }
+});
+
+function checkCollisions() {
+    bullets.forEach((bullet, bulletIndex) => {
+        let bulletHit = false;
+        
+        // 防壁との当たり判定
+        barriers.forEach(barrier => {
+            if (!bulletHit && barrier.checkCollision(bullet)) {
+                bullets.splice(bulletIndex, 1);
+                bulletHit = true;
+            }
+        });
+        
+        if (!bulletHit && !bullet.isEnemy) {
+            enemies.forEach((enemy, enemyIndex) => {
+                if (bullet.x < enemy.x + enemy.width &&
+                    bullet.x + bullet.width > enemy.x &&
+                    bullet.y < enemy.y + enemy.height &&
+                    bullet.y + bullet.height > enemy.y) {
+                    bullets.splice(bulletIndex, 1);
+                    enemies.splice(enemyIndex, 1);
+                    score += 100;
+                    scoreElement.textContent = `スコア: ${score}`;
+                }
+            });
+        } else if (!bulletHit && bullet.isEnemy) {
+            if (bullet.x < player.x + player.width &&
+                bullet.x + bullet.width > player.x &&
+                bullet.y < player.y + player.height &&
+                bullet.y + bullet.height > player.y) {
+                gameOver = true;
+            }
+        }
+    });
+
+    enemies.forEach(enemy => {
+        if (enemy.x <= 0 || enemy.x + enemy.width >= canvas.width) {
+            enemies.forEach(e => {
+                e.direction *= -1;
+                e.y += 20;
+            });
+        }
+        
+        if (enemy.y + enemy.height >= player.y) {
+            gameOver = true;
+        }
+    });
+}
+
+function gameLoop() {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (gameOver) {
+        ctx.fillStyle = '#fff';
+        ctx.font = '48px Arial';
+        ctx.fillText('GAME OVER', canvas.width/2 - 120, canvas.height/2);
+        ctx.font = '24px Arial';
+        ctx.fillText('Press R to Restart', canvas.width/2 - 80, canvas.height/2 + 40);
+        return;
+    }
+
+    player.update();
+    player.draw();
+
+    bullets = bullets.filter(bullet => bullet.y > 0 && bullet.y < canvas.height);
+    bullets.forEach(bullet => {
+        bullet.update();
+        bullet.draw();
+    });
+
+    enemies.forEach(enemy => {
+        enemy.update();
+        enemy.draw();
+    });
+
+    barriers.forEach(barrier => {
+        barrier.draw();
+    });
+
+    checkCollisions();
+
+    if (enemies.length === 0) {
+        ctx.fillStyle = '#fff';
+        ctx.font = '48px Arial';
+        ctx.fillText('YOU WIN!', canvas.width/2 - 100, canvas.height/2);
+        ctx.font = '24px Arial';
+        ctx.fillText('Press R to Play Again', canvas.width/2 - 90, canvas.height/2 + 40);
+        return;
+    }
+
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script></body></html>
